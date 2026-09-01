@@ -13,6 +13,7 @@ interface CardCarousel3DProps {
   isFlipped: boolean;
   isTuningOpen?: boolean;
   onFlip?: () => void;
+  gyro?: { x: number; y: number; active: boolean };
 }
 
 function createRoundedRectShape(w: number, h: number, r: number) {
@@ -171,6 +172,7 @@ interface SingleCardItemProps {
   onFlip?: () => void;
   isDragging: boolean;
   setIsDragging: (v: boolean) => void;
+  gyro?: { x: number; y: number; active: boolean };
 }
 
 function SingleCardItem({
@@ -186,7 +188,9 @@ function SingleCardItem({
   bodyGeometry,
   onSelectCard,
   onFlip,
+  isDragging,
   setIsDragging,
+  gyro,
 }: SingleCardItemProps) {
   const groupRef = useRef<THREE.Group>(null!);
   const [isHovered, setIsHovered] = useState(false);
@@ -285,21 +289,28 @@ function SingleCardItem({
     const distFactor = Math.max(0.68, 1 - Math.abs(deltaIndex) * 0.11);
     const targetScale = baseScale * distFactor;
 
-    const px = state.pointer.x;
-    const py = state.pointer.y;
+    const isGyroActive = !!(gyro?.active);
+    const effectivePx = isGyroActive ? (gyro?.x ?? 0) : state.pointer.x;
+    const effectivePy = isGyroActive ? (gyro?.y ?? 0) : state.pointer.y;
     const maxAngle = settings.maxTiltAngle;
 
-    // Center active card mouse interaction
+    // Center active card interaction (mouse hover or mobile gyro tilt)
     let activeRotX = targetRotX;
     let activeRotY = baseRotY;
     let activeRotZ = targetRotZ;
     let activePosZ = targetZ;
 
     if (isCenter) {
-      if (isHovered) {
-        activeRotX += -py * maxAngle;
-        activeRotY += isFlipped ? -px * maxAngle : px * maxAngle;
-        activeRotZ += -px * (maxAngle * 0.12);
+      if (isGyroActive) {
+        // Gyroscope tilt on mobile: responsive without needing pointer hover
+        activeRotX += -effectivePy * maxAngle;
+        activeRotY += isFlipped ? -effectivePx * maxAngle : effectivePx * maxAngle;
+        activeRotZ += -effectivePx * (maxAngle * 0.15);
+        activePosZ += settings.liftZ * 0.5;
+      } else if (isHovered || isDragging) {
+        activeRotX += -effectivePy * maxAngle;
+        activeRotY += isFlipped ? -effectivePx * maxAngle : effectivePx * maxAngle;
+        activeRotZ += -effectivePx * (maxAngle * 0.12);
         activePosZ += settings.liftZ;
       } else {
         const t = state.clock.elapsedTime;
@@ -471,6 +482,7 @@ export function CardCarousel3D({
   isFlipped,
   isTuningOpen,
   onFlip,
+  gyro,
 }: CardCarousel3DProps) {
   const [isDragging, setIsDragging] = useState(false);
   const targetIndexRef = useRef(0);
@@ -517,8 +529,9 @@ export function CardCarousel3D({
   }, [settings.borderRadius]);
 
   useFrame((state, delta) => {
-    const px = state.pointer.x;
-    const py = state.pointer.y;
+    const isGyroActive = !!(gyro?.active);
+    const effectivePx = isGyroActive ? (gyro?.x ?? 0) : state.pointer.x;
+    const effectivePy = isGyroActive ? (gyro?.y ?? 0) : state.pointer.y;
 
     // Smoothly animate orbit index toward target
     currentFloatIndexRef.current = THREE.MathUtils.damp(
@@ -530,8 +543,8 @@ export function CardCarousel3D({
 
     // Light beam tracking on the center active card
     if (lightBarRef.current) {
-      lightBarRef.current.position.x = THREE.MathUtils.damp(lightBarRef.current.position.x, px * 3.2, 10, delta);
-      lightBarRef.current.position.y = THREE.MathUtils.damp(lightBarRef.current.position.y, py * 4.2 + basePosY, 10, delta);
+      lightBarRef.current.position.x = THREE.MathUtils.damp(lightBarRef.current.position.x, effectivePx * 3.2, 10, delta);
+      lightBarRef.current.position.y = THREE.MathUtils.damp(lightBarRef.current.position.y, effectivePy * 4.2 + basePosY, 10, delta);
       lightBarRef.current.position.z = 2.5;
     }
   });
@@ -594,6 +607,7 @@ export function CardCarousel3D({
             onFlip={onFlip}
             isDragging={isDragging}
             setIsDragging={setIsDragging}
+            gyro={gyro}
           />
         ))}
       </group>

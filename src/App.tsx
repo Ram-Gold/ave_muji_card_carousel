@@ -5,6 +5,7 @@ import { CardCarousel3D } from './components/CardCarousel3D';
 import { TuningPanel } from './components/TuningPanel';
 import { AVE_MUJICA_CARDS } from './data/cards';
 import { DEFAULT_SETTINGS, type CardSettings } from './data/settings';
+import { useGyroscope } from './hooks/useGyroscope';
 
 function CardFallback() {
   return (
@@ -46,6 +47,8 @@ export default function App() {
   const [showTuner, setShowTuner] = useState<boolean>(false);
   const [settings, setSettings] = useState<CardSettings>(DEFAULT_SETTINGS);
 
+  const gyro = useGyroscope({ naturalTiltAngle: 45 });
+
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('avemuji_theme');
@@ -79,7 +82,6 @@ export default function App() {
   const mainRef = useRef<HTMLElement>(null);
 
   const activeCardIndex = AVE_MUJICA_CARDS.findIndex((c) => c.id === selectedCardId);
-  const activeCard = activeCardIndex !== -1 ? AVE_MUJICA_CARDS[activeCardIndex] : AVE_MUJICA_CARDS[0];
   const prevCard = AVE_MUJICA_CARDS[(activeCardIndex - 1 + AVE_MUJICA_CARDS.length) % AVE_MUJICA_CARDS.length];
   const nextCard = AVE_MUJICA_CARDS[(activeCardIndex + 1) % AVE_MUJICA_CARDS.length];
 
@@ -145,6 +147,9 @@ export default function App() {
 
   // Touch swipe
   const handleTouchStart = (e: React.TouchEvent) => {
+    if (!gyro.permissionGranted && gyro.isSupported) {
+      gyro.requestPermission();
+    }
     if (e.touches.length === 1) {
       touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, time: performance.now() };
     }
@@ -281,6 +286,7 @@ export default function App() {
               isFlipped={isFlipped}
               isTuningOpen={showTuner}
               onFlip={handleFlip}
+              gyro={{ x: gyro.gamma, y: gyro.beta, active: gyro.isActive }}
             />
           </Suspense>
         </Canvas>
