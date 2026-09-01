@@ -1,7 +1,7 @@
 import { Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Sparkles, Environment } from '@react-three/drei';
-import { TarotCard } from './components/TarotCard';
+import { CardCarousel3D } from './components/CardCarousel3D';
 import { TuningPanel } from './components/TuningPanel';
 import { AVE_MUJICA_CARDS } from './data/cards';
 import { DEFAULT_SETTINGS, type CardSettings } from './data/settings';
@@ -77,7 +77,6 @@ export default function App() {
   const canvasTapRef = useRef<{ time: number; x: number; y: number }>({ time: 0, x: 0, y: 0 });
   const lastFlipActionTimeRef = useRef<number>(0);
   const mainRef = useRef<HTMLElement>(null);
-  const cancelAnimRef = useRef<(() => void) | null>(null);
 
   const activeCardIndex = AVE_MUJICA_CARDS.findIndex((c) => c.id === selectedCardId);
   const activeCard = activeCardIndex !== -1 ? AVE_MUJICA_CARDS[activeCardIndex] : AVE_MUJICA_CARDS[0];
@@ -86,80 +85,27 @@ export default function App() {
 
   const toggleTheme = useCallback(() => {
     if (navigator.vibrate) navigator.vibrate(12);
-    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
-  }, []);
-
-  // Direction-aware card switch with WAAPI carousel slide
-  const animateToCard = useCallback((newCardId: string) => {
-    if (newCardId === selectedCardId) return;
-    if (navigator.vibrate) navigator.vibrate(10);
-
-    const newIndex = AVE_MUJICA_CARDS.findIndex((c) => c.id === newCardId);
-    const currentIndex = AVE_MUJICA_CARDS.findIndex((c) => c.id === selectedCardId);
-    // Wrap-aware direction: going from last to first = 'next', first to last = 'prev'
-    const rawDelta = newIndex - currentIndex;
-    const wrappedNext = rawDelta === -(AVE_MUJICA_CARDS.length - 1);
-    const wrappedPrev = rawDelta === (AVE_MUJICA_CARDS.length - 1);
-    const goingNext = wrappedNext || (!wrappedPrev && rawDelta > 0);
-
-    const el = mainRef.current;
+    const nextTheme = theme === 'dark' ? 'light' : 'dark';
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    // Cancel any in-flight transition
-    if (cancelAnimRef.current) {
-      cancelAnimRef.current();
-      cancelAnimRef.current = null;
-    }
-
-    if (!el || reduceMotion) {
-      setSelectedCardId(newCardId);
-      setIsFlipped(false);
-      return;
-    }
-
-    const CURVE = 'cubic-bezier(0.23, 1, 0.32, 1)';
-    const exitX  = goingNext ? '-14%' : '14%';
-    const enterX = goingNext ? '14%'  : '-14%';
-
-    // Stop any existing WAAPI animations on the element
-    el.getAnimations().forEach((a) => a.cancel());
-
-    let cancelled = false;
-    cancelAnimRef.current = () => { cancelled = true; };
-
-    const exit = el.animate(
-      [{ transform: 'translateX(0)', opacity: '1' }, { transform: `translateX(${exitX})`, opacity: '0' }],
-      { duration: 180, easing: CURVE, fill: 'forwards' }
-    );
-
-    exit.finished
-      .then(() => {
-        if (cancelled) return;
-        setSelectedCardId(newCardId);
-        setIsFlipped(false);
-        // One rAF so React flushes the state before we animate in
-        requestAnimationFrame(() => {
-          if (cancelled || !mainRef.current) return;
-          mainRef.current.getAnimations().forEach((a) => a.cancel());
-          const enter = mainRef.current.animate(
-            [{ transform: `translateX(${enterX})`, opacity: '0' }, { transform: 'translateX(0)', opacity: '1' }],
-            { duration: 240, easing: CURVE, fill: 'forwards' }
-          );
-          enter.finished
-            .then(() => { cancelAnimRef.current = null; })
-            .catch(() => {});
-        });
-      })
-      .catch(() => {
-        // Animation cancelled — apply state immediately so UI is never stuck
-        if (!cancelled) {
-          setSelectedCardId(newCardId);
-          setIsFlipped(false);
-        }
+    if (typeof document !== 'undefined' && 'startViewTransition' in document && !reduceMotion) {
+      (document as unknown as { startViewTransition: (cb: () => void) => void }).startViewTransition(() => {
+        setTheme(nextTheme);
       });
+    } else {
+      setTheme(nextTheme);
+    }
+  }, [theme]);
+
+  // Switch card with 3D Reverse-Arch Carousel orbital animation
+  const handleSwitchCard = useCallback((newCardId: string) => {
+    if (newCardId === selectedCardId) return;
+    if (navigator.vibrate) navigator.vibrate(10);
+    setSelectedCardId(newCardId);
+    setIsFlipped(false);
   }, [selectedCardId]);
 
-  const handleSwitchCard = animateToCard;
+  const animateToCard = handleSwitchCard;
 
   const handleFlip = useCallback(() => {
     const now = performance.now();
@@ -187,12 +133,10 @@ export default function App() {
       else if (e.key.toLowerCase() === 'm') { e.preventDefault(); toggleTheme(); }
       else if (e.key.toLowerCase() === 't') { e.preventDefault(); setShowTuner((p) => !p); }
       else if (e.key === 'Escape') { setShowTuner(false); }
-      else if (e.key >= '1' && e.key <= '6') {
+      else if (e.key >= '1' && e.key <= String(AVE_MUJICA_CARDS.length)) {
         const num = parseInt(e.key, 10);
-        if (num >= 1 && num <= AVE_MUJICA_CARDS.length) {
-          e.preventDefault();
-          handleSwitchCard(AVE_MUJICA_CARDS[num - 1].id);
-        }
+        e.preventDefault();
+        handleSwitchCard(AVE_MUJICA_CARDS[num - 1].id);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -231,7 +175,7 @@ export default function App() {
 
   return (
     <div
-      className={`relative w-screen h-screen overflow-hidden select-none ${
+      className={`relative w-screen h-screen overflow-hidden select-none transition-colors duration-300 ease-out ${
         isLight ? 'bg-[#f4f3f8]' : 'bg-[#05050a]'
       }`}
       onTouchStart={handleTouchStart}
@@ -239,17 +183,21 @@ export default function App() {
     >
       {/* Ambient colour bloom */}
       <div
-        className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[70vw] max-w-[420px] h-[70vw] max-h-[420px] rounded-full blur-[120px] pointer-events-none transition-all duration-700 ease-out ${
+        className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[70vw] max-w-[420px] h-[70vw] max-h-[420px] rounded-full blur-[120px] pointer-events-none transition-all duration-500 ease-out ${
           isLight ? 'opacity-15' : 'opacity-20'
         }`}
-        style={{ backgroundColor: activeCard.themeColor }}
+        style={{ backgroundColor: 'red' }}
       />
-      {/* Vignette */}
+      {/* Dark Vignette */}
       <div
-        className={`absolute inset-0 pointer-events-none ${
-          isLight
-            ? 'bg-[radial-gradient(circle_at_50%_50%,_transparent_30%,_rgba(226,222,238,0.5)_100%)]'
-            : 'bg-[radial-gradient(circle_at_50%_50%,_transparent_25%,_#020205_100%)]'
+        className={`absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_50%_50%,_transparent_25%,_#020205_100%)] transition-opacity duration-300 ease-out ${
+          isLight ? 'opacity-0' : 'opacity-100'
+        }`}
+      />
+      {/* Light Vignette */}
+      <div
+        className={`absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_50%_50%,_transparent_30%,_rgba(226,222,238,0.5)_100%)] transition-opacity duration-300 ease-out ${
+          isLight ? 'opacity-100' : 'opacity-0'
         }`}
       />
 
@@ -258,7 +206,7 @@ export default function App() {
       <button
         type="button"
         onClick={handlePrevCard}
-        className={`group absolute left-5 sm:left-8 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-xl border transition-all duration-150 cursor-pointer active:scale-90 ${
+        className={`group absolute left-5 sm:left-8 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-xl border transition-all duration-300 ease-out cursor-pointer active:scale-90 ${
           isLight
             ? 'bg-white/60 hover:bg-white/90 border-black/[0.07] text-slate-500 hover:text-slate-900'
             : 'bg-white/[0.05] hover:bg-white/[0.12] border-white/[0.07] text-slate-400 hover:text-white'
@@ -274,7 +222,7 @@ export default function App() {
       <button
         type="button"
         onClick={handleNextCard}
-        className={`group absolute right-5 sm:right-8 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-xl border transition-all duration-150 cursor-pointer active:scale-90 ${
+        className={`group absolute right-5 sm:right-8 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-xl border transition-all duration-300 ease-out cursor-pointer active:scale-90 ${
           isLight
             ? 'bg-white/60 hover:bg-white/90 border-black/[0.07] text-slate-500 hover:text-slate-900'
             : 'bg-white/[0.05] hover:bg-white/[0.12] border-white/[0.07] text-slate-400 hover:text-white'
@@ -326,9 +274,9 @@ export default function App() {
             color={isLight ? '#d97706' : settings.goldColor}
           />
           <Suspense fallback={<CardFallback />}>
-            <TarotCard
-              key={activeCard.id}
-              card={activeCard}
+            <CardCarousel3D
+              selectedCardId={selectedCardId}
+              onSelectCard={handleSwitchCard}
               settings={settings}
               isFlipped={isFlipped}
               isTuningOpen={showTuner}
@@ -338,71 +286,15 @@ export default function App() {
         </Canvas>
       </main>
 
-      {/* ── Bottom pill: Tuning + Theme ── */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center">
-        <div
-          className={`flex items-center gap-0.5 p-1 rounded-full backdrop-blur-xl border ${
-            isLight
-              ? 'bg-white/70 border-black/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.07)]'
-              : 'bg-white/[0.05] border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.4)]'
-          }`}
-        >
-          {/* Tuning */}
-          <button
-            type="button"
-            onClick={() => setShowTuner((p) => !p)}
-            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 cursor-pointer active:scale-90 ${
-              showTuner
-                ? 'bg-amber-400/90 text-black shadow-[0_0_12px_rgba(251,191,36,0.4)]'
-                : isLight
-                ? 'text-slate-500 hover:text-slate-900 hover:bg-black/[0.06]'
-                : 'text-slate-400 hover:text-white hover:bg-white/[0.1]'
-            }`}
-            aria-label="Tuning"
-            title="Tuning (T)"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-            </svg>
-          </button>
-
-          {/* Divider */}
-          <span className={`w-px h-4 mx-0.5 ${isLight ? 'bg-black/[0.08]' : 'bg-white/[0.08]'}`} />
-
-          {/* Theme */}
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 cursor-pointer active:scale-90 ${
-              isLight
-                ? 'text-slate-500 hover:text-slate-900 hover:bg-black/[0.06]'
-                : 'text-slate-400 hover:text-white hover:bg-white/[0.1]'
-            }`}
-            aria-label={isLight ? 'Switch to dark mode' : 'Switch to light mode'}
-            title={`${isLight ? 'Dark' : 'Light'} mode (M)`}
-          >
-            {isLight ? (
-              <svg className="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-              </svg>
-            ) : (
-              <svg className="w-3.5 h-3.5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-              </svg>
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* Tuning panel */}
-      {showTuner && (
-        <TuningPanel
-          settings={settings}
-          onChange={setSettings}
-          onClose={() => setShowTuner(false)}
-          theme={theme}
-        />
-      )}
+      {/* ── Dynamic Control Island (Morphing Pill & Tuning Inspector) ── */}
+      <TuningPanel
+        isOpen={showTuner}
+        onToggleOpen={() => setShowTuner((p) => !p)}
+        settings={settings}
+        onChange={setSettings}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+      />
     </div>
   );
 }

@@ -2,11 +2,13 @@ import { useState, useRef } from 'react';
 import type { CardSettings } from '../data/settings';
 import { DEFAULT_SETTINGS, PRESETS } from '../data/settings';
 
-interface TuningPanelProps {
+export interface TuningPanelProps {
   settings: CardSettings;
   onChange: (newSettings: CardSettings) => void;
-  onClose: () => void;
-  theme?: 'dark' | 'light';
+  isOpen: boolean;
+  onToggleOpen: () => void;
+  theme: 'dark' | 'light';
+  onToggleTheme: () => void;
 }
 
 const GOLD_COLORS = [
@@ -57,7 +59,14 @@ const QUICK_PROPERTIES: { id: QuickProperty; label: string; min: number; max: nu
   { id: 'damping', label: 'Spring', min: 2, max: 20, step: 0.5, hint: 'Return speed' },
 ];
 
-export function TuningPanel({ settings, onChange, onClose, theme = 'dark' }: TuningPanelProps) {
+export function TuningPanel({
+  settings,
+  onChange,
+  isOpen,
+  onToggleOpen,
+  theme,
+  onToggleTheme,
+}: TuningPanelProps) {
   const [isCompact, setIsCompact] = useState<boolean>(true);
   const [selectedQuickProp, setSelectedQuickProp] = useState<QuickProperty>('beamIntensity');
   const [activeTab, setActiveTab] = useState<'beam' | 'light' | 'material' | 'physics'>('beam');
@@ -120,24 +129,131 @@ export function TuningPanel({ settings, onChange, onClose, theme = 'dark' }: Tun
   const currentValue = (settings[currentQuickDef.id] as number) ?? 0;
   const displayFormatted = currentQuickDef.format ? currentQuickDef.format(currentValue) : currentValue.toFixed(2);
 
+  const targetWidth = !isOpen ? '92px' : isCompact ? '410px' : '520px';
+  const targetHeight = !isOpen ? '42px' : isCompact ? '240px' : 'min(540px, 75vh)';
+  const targetRadius = !isOpen ? '21px' : isCompact ? '18px' : '24px';
+
   return (
     <>
-      {/* Container */}
+      {/* ── Dynamic Island (Height Collapses First on Exit + Width Tucks In) ── */}
       <div
-        className={`fixed z-40 font-sans select-none left-2 right-2 bottom-2 md:left-auto md:right-4 md:top-16 md:bottom-16 md:w-96 ${
-          isLight ? 'text-slate-800' : 'text-slate-200'
-        }`}
+        className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-40 font-sans select-none origin-bottom ${
+          !isOpen
+            ? 'shadow-[0_4px_24px_rgba(0,0,0,0.18)]'
+            : isCompact
+            ? 'shadow-[0_20px_50px_rgba(0,0,0,0.25)]'
+            : 'shadow-[0_24px_60px_rgba(0,0,0,0.35)]'
+        } ${
+          isLight
+            ? 'bg-white/85 border border-black/[0.08] text-slate-800'
+            : 'bg-[#090912]/85 border border-white/[0.09] text-slate-200'
+        } backdrop-blur-2xl overflow-hidden`}
+        style={{
+          width: targetWidth,
+          maxWidth: 'calc(100vw - 32px)',
+          height: targetHeight,
+          borderRadius: targetRadius,
+          transition: isOpen
+            ? 'width 340ms cubic-bezier(0.34, 1.15, 0.42, 1), height 340ms cubic-bezier(0.34, 1.15, 0.42, 1), border-radius 340ms cubic-bezier(0.34, 1.15, 0.42, 1), background-color 220ms ease, box-shadow 340ms ease'
+            : 'width 280ms cubic-bezier(0.34, 1.18, 0.45, 1), height 280ms cubic-bezier(0.34, 1.18, 0.45, 1), border-radius 280ms cubic-bezier(0.34, 1.18, 0.45, 1), background-color 200ms ease, box-shadow 280ms ease',
+        }}
       >
+        {/* ── PILL BUTTONS ── */}
         <div
-          className={`rounded-2xl backdrop-blur-2xl flex flex-col overflow-hidden max-h-[50vh] md:max-h-[82vh] transition-colors duration-200 ${
-            isLight
-              ? 'bg-white/90 border border-black/[0.1] shadow-[0_20px_50px_rgba(0,0,0,0.15)]'
-              : 'bg-[#090912]/90 border border-white/[0.08] shadow-[0_16px_40px_rgba(0,0,0,0.85)]'
+          className={`absolute inset-x-0 top-0 h-[42px] flex items-center justify-between px-2 transition-all ${
+            !isOpen
+              ? 'opacity-100 scale-100 pointer-events-auto duration-150 delay-150 ease-out'
+              : 'opacity-0 scale-85 pointer-events-none duration-70 delay-0 ease-in'
           }`}
+        >
+          {/* Tuning Button */}
+          <button
+            type="button"
+            onClick={onToggleOpen}
+            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 cursor-pointer active:scale-90 ${
+              isLight
+                ? 'text-slate-500 hover:text-slate-900 hover:bg-black/[0.06]'
+                : 'text-slate-400 hover:text-white hover:bg-white/[0.1]'
+            }`}
+            aria-label="Open Tuning"
+            title="Tuning (T)"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
+              />
+            </svg>
+          </button>
+
+          {/* Divider */}
+          <span className={`w-px h-4 mx-0.5 transition-colors duration-300 ${isLight ? 'bg-black/[0.08]' : 'bg-white/[0.08]'}`} />
+
+          {/* Theme Toggle */}
+          <button
+            type="button"
+            onClick={onToggleTheme}
+            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 cursor-pointer active:scale-90 ${
+              isLight
+                ? 'text-slate-500 hover:text-slate-900 hover:bg-black/[0.06]'
+                : 'text-slate-400 hover:text-white hover:bg-white/[0.1]'
+            }`}
+            aria-label={isLight ? 'Switch to dark mode' : 'Switch to light mode'}
+            title={`${isLight ? 'Dark' : 'Light'} mode (M)`}
+          >
+            <div className="relative w-3.5 h-3.5 flex items-center justify-center">
+              <svg
+                className={`w-3.5 h-3.5 text-amber-500 absolute inset-0 transition-all duration-200 ease-out ${
+                  isLight ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 -rotate-45 scale-75 pointer-events-none'
+                }`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
+                />
+              </svg>
+              <svg
+                className={`w-3.5 h-3.5 text-slate-300 absolute inset-0 transition-all duration-200 ease-out ${
+                  isLight ? 'opacity-0 rotate-45 scale-75 pointer-events-none' : 'opacity-100 rotate-0 scale-100'
+                }`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
+                />
+              </svg>
+            </div>
+          </button>
+        </div>
+
+        {/* ── EXPANDED INSPECTOR CONTENT ── */}
+        <div
+          className={`w-full h-full flex flex-col ${
+            isOpen
+              ? 'opacity-100 pointer-events-auto'
+              : 'opacity-0 pointer-events-none'
+          }`}
+          style={{
+            filter: isOpen ? 'brightness(1)' : 'brightness(0)',
+            transition: isOpen
+              ? 'filter 200ms cubic-bezier(0, 0, 0.2, 1) 40ms, opacity 200ms cubic-bezier(0, 0, 0.2, 1) 40ms'
+              : 'filter 80ms cubic-bezier(0.4, 0, 1, 1), opacity 120ms cubic-bezier(0.4, 0, 1, 1) 50ms',
+          }}
         >
           {/* Header */}
           <div
-            className={`flex items-center justify-between px-3.5 py-2 border-b ${
+            className={`flex items-center justify-between px-3.5 py-2.5 border-b transition-colors duration-250 ${
               isLight ? 'bg-black/[0.02] border-black/[0.06]' : 'bg-white/[0.02] border-white/[0.06]'
             }`}
           >
@@ -153,27 +269,68 @@ export function TuningPanel({ settings, onChange, onClose, theme = 'dark' }: Tun
             </div>
 
             <div className="flex items-center gap-1">
+              {/* Expand / Collapse Button */}
               <button
                 type="button"
                 onClick={() => setIsCompact((prev) => !prev)}
-                className={`px-2 py-0.5 rounded-md text-[10px] font-mono cursor-pointer transition-colors ${
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-mono cursor-pointer transition-all duration-150 active:scale-95 ${
                   isLight
                     ? 'bg-black/[0.05] hover:bg-black/[0.09] text-slate-600 hover:text-slate-900'
-                    : 'bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 hover:text-slate-200'
+                    : 'bg-white/[0.05] hover:bg-white/[0.1] text-slate-300 hover:text-slate-100'
                 }`}
+                title={isCompact ? 'Expand inspector' : 'Collapse to compact'}
               >
-                {isCompact ? 'Expand' : 'Compact'}
+                {isCompact ? (
+                  <>
+                    <svg className="w-3 h-3 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                    </svg>
+                    <span>Expand</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3 h-3 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                    <span>Compact</span>
+                  </>
+                )}
               </button>
 
+              {/* Theme Toggle Button inside Inspector */}
               <button
                 type="button"
-                onClick={onClose}
-                className={`p-1 rounded-md cursor-pointer transition-colors ${
+                onClick={onToggleTheme}
+                className={`w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer transition-all duration-150 active:scale-90 ${
                   isLight
                     ? 'text-slate-500 hover:text-slate-800 hover:bg-black/[0.05]'
                     : 'text-slate-400 hover:text-slate-100 hover:bg-white/[0.06]'
                 }`}
-                aria-label="Close"
+                title="Toggle Theme (M)"
+                aria-label="Toggle Theme"
+              >
+                {isLight ? (
+                  <svg className="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                  </svg>
+                ) : (
+                  <svg className="w-3.5 h-3.5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                )}
+              </button>
+
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={onToggleOpen}
+                className={`w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer transition-colors duration-150 active:scale-90 ${
+                  isLight
+                    ? 'text-slate-500 hover:text-slate-800 hover:bg-black/[0.05]'
+                    : 'text-slate-400 hover:text-slate-100 hover:bg-white/[0.06]'
+                }`}
+                aria-label="Close Inspector"
+                title="Close (T or Esc)"
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -182,9 +339,9 @@ export function TuningPanel({ settings, onChange, onClose, theme = 'dark' }: Tun
             </div>
           </div>
 
-          {/* COMPACT MODE */}
+          {/* COMPACT MODE BODY */}
           {isCompact ? (
-            <div className="p-3 space-y-2">
+            <div className="p-3 space-y-2 overflow-hidden">
               {/* Quick Chips */}
               <div className="flex items-center gap-1 overflow-x-auto no-scrollbar pb-0.5">
                 {QUICK_PROPERTIES.map((prop) => {
@@ -194,7 +351,7 @@ export function TuningPanel({ settings, onChange, onClose, theme = 'dark' }: Tun
                       key={prop.id}
                       type="button"
                       onClick={() => setSelectedQuickProp(prop.id)}
-                      className={`flex-shrink-0 px-2.5 py-1 rounded-lg text-[10px] font-mono cursor-pointer transition-all duration-150 ${
+                      className={`flex-shrink-0 px-2.5 py-1 rounded-lg text-[10px] font-mono cursor-pointer transition-all duration-150 active:scale-95 ${
                         isSelected
                           ? 'bg-amber-500 text-white font-semibold shadow-sm'
                           : isLight
@@ -210,7 +367,7 @@ export function TuningPanel({ settings, onChange, onClose, theme = 'dark' }: Tun
 
               {/* Slider Row */}
               <div
-                className={`p-2.5 rounded-xl border space-y-1.5 ${
+                className={`p-2.5 rounded-xl border space-y-1.5 transition-colors duration-200 ${
                   isLight ? 'bg-slate-100/80 border-black/[0.06]' : 'bg-black/30 border-white/[0.06]'
                 }`}
               >
@@ -238,7 +395,7 @@ export function TuningPanel({ settings, onChange, onClose, theme = 'dark' }: Tun
                   <button
                     type="button"
                     onClick={() => onChange({ ...PRESETS.singleBeam.settings })}
-                    className={`px-2 py-1 rounded-md text-[10px] font-mono cursor-pointer transition-colors ${
+                    className={`px-2 py-1 rounded-md text-[10px] font-mono cursor-pointer transition-colors active:scale-95 ${
                       isLight
                         ? 'bg-black/[0.05] hover:bg-black/[0.09] text-amber-700 font-medium'
                         : 'bg-white/[0.04] hover:bg-white/[0.08] text-amber-300/80'
@@ -249,7 +406,7 @@ export function TuningPanel({ settings, onChange, onClose, theme = 'dark' }: Tun
                   <button
                     type="button"
                     onClick={() => onChange({ ...PRESETS.horizontalLaser.settings })}
-                    className={`px-2 py-1 rounded-md text-[10px] font-mono cursor-pointer transition-colors ${
+                    className={`px-2 py-1 rounded-md text-[10px] font-mono cursor-pointer transition-colors active:scale-95 ${
                       isLight
                         ? 'bg-black/[0.05] hover:bg-black/[0.09] text-amber-700 font-medium'
                         : 'bg-white/[0.04] hover:bg-white/[0.08] text-amber-300/80'
@@ -260,7 +417,7 @@ export function TuningPanel({ settings, onChange, onClose, theme = 'dark' }: Tun
                   <button
                     type="button"
                     onClick={() => onChange({ ...DEFAULT_SETTINGS })}
-                    className={`px-2 py-1 rounded-md text-[10px] font-mono cursor-pointer transition-colors ${
+                    className={`px-2 py-1 rounded-md text-[10px] font-mono cursor-pointer transition-colors active:scale-95 ${
                       isLight
                         ? 'bg-black/[0.05] hover:bg-black/[0.09] text-slate-600'
                         : 'bg-white/[0.04] hover:bg-white/[0.08] text-slate-400'
@@ -280,19 +437,15 @@ export function TuningPanel({ settings, onChange, onClose, theme = 'dark' }: Tun
               </div>
             </div>
           ) : (
-            /* FULL EXPANDED MODE */
-            <>
+            /* EXPANDED MODE BODY */
+            <div className="flex flex-col flex-1 overflow-hidden">
               {/* Presets Row */}
               <div
-                className={`px-3.5 py-1.5 border-b flex flex-wrap gap-1 items-center text-[10px] font-mono ${
+                className={`px-3.5 py-1.5 border-b flex flex-wrap gap-1 items-center text-[10px] font-mono transition-colors duration-200 ${
                   isLight ? 'border-black/[0.06] bg-slate-50' : 'border-white/[0.04] bg-black/20'
                 }`}
               >
-                <span
-                  className={`uppercase tracking-wider text-[9px] mr-1 ${
-                    isLight ? 'text-slate-500' : 'text-slate-500'
-                  }`}
-                >
+                <span className="uppercase tracking-wider text-[9px] mr-1 text-slate-500 font-medium">
                   Presets:
                 </span>
                 {Object.entries(PRESETS).map(([key, preset]) => (
@@ -300,7 +453,7 @@ export function TuningPanel({ settings, onChange, onClose, theme = 'dark' }: Tun
                     key={key}
                     type="button"
                     onClick={() => onChange({ ...preset.settings })}
-                    className={`px-2 py-0.5 rounded cursor-pointer transition-colors ${
+                    className={`px-2 py-0.5 rounded cursor-pointer transition-colors active:scale-95 ${
                       isLight
                         ? 'bg-black/[0.05] hover:bg-black/[0.09] text-amber-800 font-medium'
                         : 'bg-white/[0.04] hover:bg-white/[0.08] text-amber-300/90'
@@ -312,7 +465,7 @@ export function TuningPanel({ settings, onChange, onClose, theme = 'dark' }: Tun
                 <button
                   type="button"
                   onClick={() => onChange({ ...DEFAULT_SETTINGS })}
-                  className={`px-2 py-0.5 rounded cursor-pointer transition-colors ${
+                  className={`px-2 py-0.5 rounded cursor-pointer transition-colors active:scale-95 ${
                     isLight
                       ? 'bg-black/[0.05] hover:bg-black/[0.09] text-slate-600'
                       : 'bg-white/[0.04] hover:bg-white/[0.08] text-slate-400'
@@ -324,7 +477,7 @@ export function TuningPanel({ settings, onChange, onClose, theme = 'dark' }: Tun
 
               {/* Tabs */}
               <div
-                className={`flex border-b px-3 pt-1 overflow-x-auto no-scrollbar ${
+                className={`flex border-b px-3 pt-1 overflow-x-auto no-scrollbar transition-colors duration-200 ${
                   isLight ? 'border-black/[0.06] bg-black/[0.01]' : 'border-white/[0.06] bg-white/[0.01]'
                 }`}
               >
@@ -333,7 +486,7 @@ export function TuningPanel({ settings, onChange, onClose, theme = 'dark' }: Tun
                     key={tab}
                     type="button"
                     onClick={() => setActiveTab(tab)}
-                    className={`pb-1.5 px-3 text-[11px] font-mono cursor-pointer border-b-2 transition-all capitalize ${
+                    className={`pb-1.5 px-3 text-[11px] font-mono cursor-pointer border-b-2 transition-all capitalize active:scale-95 ${
                       activeTab === tab
                         ? isLight
                           ? 'border-amber-500 text-amber-600 font-bold'
@@ -362,7 +515,7 @@ export function TuningPanel({ settings, onChange, onClose, theme = 'dark' }: Tun
                             key={count}
                             type="button"
                             onClick={() => updateField('beamLines', count)}
-                            className={`py-1 rounded-md text-[10px] font-mono cursor-pointer border transition-all ${
+                            className={`py-1 rounded-md text-[10px] font-mono cursor-pointer border transition-all active:scale-95 ${
                               (settings.beamLines ?? 1) === count
                                 ? isLight
                                   ? 'border-amber-500 bg-amber-500/15 text-amber-800 font-bold'
@@ -462,7 +615,7 @@ export function TuningPanel({ settings, onChange, onClose, theme = 'dark' }: Tun
                             key={item.hex}
                             type="button"
                             onClick={() => updateField('goldColor', item.hex)}
-                            className={`flex items-center gap-1.5 p-1 rounded-md border text-[10px] font-mono cursor-pointer transition-all ${
+                            className={`flex items-center gap-1.5 p-1 rounded-md border text-[10px] font-mono cursor-pointer transition-all active:scale-95 ${
                               settings.goldColor.toLowerCase() === item.hex.toLowerCase()
                                 ? isLight
                                   ? 'border-amber-500 bg-amber-500/15 text-amber-800 font-bold'
@@ -652,7 +805,7 @@ export function TuningPanel({ settings, onChange, onClose, theme = 'dark' }: Tun
 
               {/* Footer */}
               <div
-                className={`p-3 border-t flex items-center gap-2 ${
+                className={`p-3 border-t flex items-center gap-2 transition-colors duration-200 ${
                   isLight ? 'border-black/[0.06] bg-slate-50' : 'border-white/[0.06] bg-black/30'
                 }`}
               >
@@ -667,7 +820,7 @@ export function TuningPanel({ settings, onChange, onClose, theme = 'dark' }: Tun
                 <button
                   type="button"
                   onClick={() => setShowJsonModal(true)}
-                  className={`px-3 py-2 rounded-lg text-xs font-mono cursor-pointer transition-colors ${
+                  className={`px-3 py-2 rounded-lg text-xs font-mono cursor-pointer transition-colors active:scale-95 ${
                     isLight
                       ? 'bg-black/[0.05] hover:bg-black/[0.1] text-slate-700'
                       : 'bg-white/[0.06] hover:bg-white/[0.10] text-slate-300'
@@ -676,14 +829,14 @@ export function TuningPanel({ settings, onChange, onClose, theme = 'dark' }: Tun
                   JSON
                 </button>
               </div>
-            </>
+            </div>
           )}
         </div>
       </div>
 
-      {/* JSON Modal */}
+      {/* ── JSON Export Modal ── */}
       {showJsonModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
           <div
             className={`w-full max-w-sm border rounded-2xl p-4 shadow-2xl flex flex-col gap-3 font-mono ${
               isLight ? 'bg-white border-black/[0.12] text-slate-800' : 'bg-[#0c0c16] border-white/[0.12] text-slate-200'
@@ -694,7 +847,7 @@ export function TuningPanel({ settings, onChange, onClose, theme = 'dark' }: Tun
               <button
                 type="button"
                 onClick={() => setShowJsonModal(false)}
-                className={`p-1 rounded cursor-pointer transition-colors ${
+                className={`p-1 rounded cursor-pointer transition-colors active:scale-90 ${
                   isLight ? 'text-slate-400 hover:text-slate-800' : 'text-slate-400 hover:text-white'
                 }`}
               >
@@ -737,7 +890,7 @@ export function TuningPanel({ settings, onChange, onClose, theme = 'dark' }: Tun
               <button
                 type="button"
                 onClick={() => setShowJsonModal(false)}
-                className={`px-3 py-2 rounded-lg text-xs cursor-pointer transition-colors ${
+                className={`px-3 py-2 rounded-lg text-xs cursor-pointer transition-colors active:scale-95 ${
                   isLight
                     ? 'bg-black/[0.06] text-slate-700 hover:bg-black/[0.1]'
                     : 'bg-white/[0.08] text-slate-300 hover:bg-white/[0.12]'

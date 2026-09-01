@@ -35,7 +35,7 @@ export interface CardSettings {
 
 export const DEFAULT_SETTINGS: CardSettings = {
   metalness: 0.44,
-  roughness: 0.26,
+  roughness: 0.33,
   clearcoat: 0,
   clearcoatRoughness: 0.12,
   normalScale: 0.1,
@@ -44,19 +44,19 @@ export const DEFAULT_SETTINGS: CardSettings = {
   reflectivity: 0.9,
   ior: 1.5,
   borderRadius: 0.12,
-  anisotropy: 0.2,
+  anisotropy: 0.85,
   anisotropyRotation: 0.7,
 
   // Light beam
   beamLines: 1,
   beamIntensity: 2.05,
   beamSpread: 0.6,
-  beamAngle: 0.3,
+  beamAngle: 0.75,
   beamSoftness: 2.2,
 
   // Gold lighting
   goldColor: '#ffd700',
-  goldLightIntensity: 1.55,
+  goldLightIntensity: 2.45,
   goldAmbientIntensity: 1.65,
   specularFollowIntensity: 2.2,
   specularDistance: 7,
