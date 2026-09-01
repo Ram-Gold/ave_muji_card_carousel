@@ -3,6 +3,7 @@ import { Canvas } from '@react-three/fiber';
 import { Sparkles, Environment } from '@react-three/drei';
 import { CardCarousel3D } from './components/CardCarousel3D';
 import { TuningPanel } from './components/TuningPanel';
+import { InfoModal } from './components/InfoModal';
 import { AVE_MUJICA_CARDS } from './data/cards';
 import { DEFAULT_SETTINGS, type CardSettings } from './data/settings';
 import { useGyroscope } from './hooks/useGyroscope';
@@ -45,6 +46,7 @@ export default function App() {
   const [selectedCardId, setSelectedCardId] = useState<string>('doloris');
   const [isFlipped, setIsFlipped] = useState<boolean>(false);
   const [showTuner, setShowTuner] = useState<boolean>(false);
+  const [showInfo, setShowInfo] = useState<boolean>(false);
   const [settings, setSettings] = useState<CardSettings>(DEFAULT_SETTINGS);
 
   const gyro = useGyroscope({ naturalTiltAngle: 45 });
@@ -134,7 +136,8 @@ export default function App() {
       else if (e.key === ' ' || e.key.toLowerCase() === 'f') { e.preventDefault(); handleFlip(); }
       else if (e.key.toLowerCase() === 'm') { e.preventDefault(); toggleTheme(); }
       else if (e.key.toLowerCase() === 't') { e.preventDefault(); setShowTuner((p) => !p); }
-      else if (e.key === 'Escape') { setShowTuner(false); }
+      else if (e.key === '?' || e.key.toLowerCase() === 'i') { e.preventDefault(); setShowInfo((p) => !p); }
+      else if (e.key === 'Escape') { setShowTuner(false); setShowInfo(false); }
       else if (e.key >= '1' && e.key <= String(AVE_MUJICA_CARDS.length)) {
         const num = parseInt(e.key, 10);
         e.preventDefault();
@@ -206,6 +209,30 @@ export default function App() {
         }`}
       />
 
+
+      {/* ── Top Right Info (?) Button ── */}
+      <button
+        type="button"
+        onClick={() => {
+          if (navigator.vibrate) navigator.vibrate(10);
+          setShowInfo(true);
+        }}
+        className={`group absolute right-5 sm:right-8 top-5 sm:top-8 z-30 w-10 h-10 rounded-full flex items-center justify-center backdrop-blur-xl border transition-all duration-300 ease-out cursor-pointer active:scale-90 shadow-sm hover:shadow-md ${
+          isLight
+            ? 'bg-white/70 hover:bg-white/95 border-black/[0.08] text-slate-600 hover:text-slate-900 shadow-[0_2px_12px_rgba(0,0,0,0.06)]'
+            : 'bg-[#090912]/70 hover:bg-white/[0.12] border-white/[0.1] text-slate-300 hover:text-white shadow-[0_4px_20px_rgba(0,0,0,0.3)]'
+        }`}
+        aria-label="About Ave Mujica project"
+        title="About Project (?)"
+      >
+        <svg className="w-5 h-5 transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+          />
+        </svg>
+      </button>
 
       {/* ── Left arrow ── */}
       <button
@@ -300,6 +327,13 @@ export default function App() {
         onChange={setSettings}
         theme={theme}
         onToggleTheme={toggleTheme}
+      />
+
+      {/* ── Info / About Project Modal ── */}
+      <InfoModal
+        isOpen={showInfo}
+        onClose={() => setShowInfo(false)}
+        isLight={isLight}
       />
     </div>
   );

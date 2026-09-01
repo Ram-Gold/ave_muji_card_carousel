@@ -320,7 +320,7 @@ function SingleCardItem({
       }
     }
 
-    const dampSpeed = 10;
+    const dampSpeed = settings.damping ?? 10;
     groupRef.current.position.x = THREE.MathUtils.damp(groupRef.current.position.x, targetX, dampSpeed, delta);
     groupRef.current.position.y = THREE.MathUtils.damp(groupRef.current.position.y, targetY, dampSpeed, delta);
     groupRef.current.position.z = THREE.MathUtils.damp(groupRef.current.position.z, activePosZ, dampSpeed, delta);
@@ -343,14 +343,27 @@ function SingleCardItem({
       frontMatRef.current.roughness = targetRoughness;
       frontMatRef.current.clearcoat = targetClearcoat;
       frontMatRef.current.envMapIntensity = targetEnvIntensity;
+      frontMatRef.current.metalness = settings.metalness;
+      frontMatRef.current.anisotropy = settings.anisotropy ?? 0.85;
+      frontMatRef.current.anisotropyRotation = anisotropyAngle;
+      if (frontPBR?.normalMap && frontMatRef.current.normalScale) {
+        frontMatRef.current.normalScale.set(settings.normalScale, settings.normalScale);
+      }
     }
     if (backMatRef.current) {
       backMatRef.current.roughness = targetRoughness;
       backMatRef.current.clearcoat = targetClearcoat;
       backMatRef.current.envMapIntensity = targetEnvIntensity;
+      backMatRef.current.metalness = settings.metalness;
+      backMatRef.current.anisotropy = settings.anisotropy ?? 0.85;
+      backMatRef.current.anisotropyRotation = anisotropyAngle;
+      if (backPBR?.normalMap && backMatRef.current.normalScale) {
+        backMatRef.current.normalScale.set(settings.normalScale, settings.normalScale);
+      }
     }
     if (rimMatRef.current) {
       rimMatRef.current.roughness = THREE.MathUtils.lerp(0.18, 0.85, blurAmount);
+      rimMatRef.current.emissive.set(settings.goldColor);
     }
 
     // Hide cards completely behind the back cylinder horizon
@@ -546,6 +559,7 @@ export function CardCarousel3D({
       lightBarRef.current.position.x = THREE.MathUtils.damp(lightBarRef.current.position.x, effectivePx * 3.2, 10, delta);
       lightBarRef.current.position.y = THREE.MathUtils.damp(lightBarRef.current.position.y, effectivePy * 4.2 + basePosY, 10, delta);
       lightBarRef.current.position.z = 2.5;
+      lightBarRef.current.rotation.z = beamAngle;
     }
   });
 

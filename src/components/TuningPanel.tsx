@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { CardSettings } from '../data/settings';
 import { DEFAULT_SETTINGS, PRESETS } from '../data/settings';
 
@@ -59,6 +59,81 @@ const QUICK_PROPERTIES: { id: QuickProperty; label: string; min: number; max: nu
   { id: 'damping', label: 'Spring', min: 2, max: 20, step: 0.5, hint: 'Return speed' },
 ];
 
+interface SliderControlProps {
+  label: string;
+  value: number;
+  displayValue?: string;
+  min: number;
+  max: number;
+  step: number;
+  isLight: boolean;
+  onChange: (val: number) => void;
+  enableWheel?: boolean;
+  className?: string;
+}
+
+function SliderControl({
+  label,
+  value,
+  displayValue,
+  min,
+  max,
+  step,
+  isLight,
+  onChange,
+  enableWheel = false,
+  className = '',
+}: SliderControlProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !enableWheel) return;
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const direction = e.deltaY < 0 ? 1 : -1;
+      const stepDecimals = step.toString().split('.')[1]?.length || 0;
+      const precision = Math.max(stepDecimals, 2);
+      const rawNext = value + direction * step;
+      const clamped = Math.min(max, Math.max(min, rawNext));
+      const rounded = parseFloat(clamped.toFixed(precision));
+      onChange(rounded);
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [value, min, max, step, onChange, enableWheel]);
+
+  return (
+    <div
+      ref={containerRef}
+      className={`p-3 rounded-[18px] transition-colors duration-200 ${
+        isLight ? 'bg-black/5 hover:bg-black/[0.07]' : 'bg-white/5 hover:bg-white/[0.07]'
+      } ${className}`}
+    >
+      <div className="flex justify-between items-center mb-1.5">
+        <span className={`text-xs font-bold ${isLight ? 'text-slate-800' : 'text-slate-100'}`}>
+          {label}
+        </span>
+        <span className="text-xs font-bold text-amber-500 bg-amber-500/20 px-2.5 py-0.5 rounded-full font-mono">
+          {displayValue ?? value.toFixed(2)}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        className="w-full h-2 bg-black/10 appearance-none rounded-full cursor-pointer"
+      />
+    </div>
+  );
+}
+
 export function TuningPanel({
   settings,
   onChange,
@@ -74,13 +149,69 @@ export function TuningPanel({
   const [copyStatus, setCopyStatus] = useState<string>('');
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
 
+  const quickPillsRef = useRef<HTMLDivElement>(null);
+  const presetsPillsRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
+
   const isLight = theme === 'light';
 
+  // Horizontal scroll with mouse wheel on pill containers
+  useEffect(() => {
+    const attachWheel = (el: HTMLDivElement | null) => {
+      if (!el) return () => {};
+      const onWheel = (e: WheelEvent) => {
+        if (Math.abs(e.deltaY) >= Math.abs(e.deltaX) && e.deltaY !== 0) {
+          e.preventDefault();
+          el.scrollBy({
+            left: e.deltaY,
+            behavior: 'smooth',
+          });
+        }
+      };
+      el.addEventListener('wheel', onWheel, { passive: false });
+      return () => el.removeEventListener('wheel', onWheel);
+    };
+
+    const cleanup1 = attachWheel(quickPillsRef.current);
+    const cleanup2 = attachWheel(presetsPillsRef.current);
+    const cleanup3 = attachWheel(tabsRef.current);
+
+    return () => {
+      cleanup1();
+      cleanup2();
+      cleanup3();
+    };
+  }, [isOpen, isCompact, activeTab]);
+
+  // Keyboard shortcut 'E' to toggle expand/compact only when TuningPanel is active
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) return;
+      if (e.key.toLowerCase() === 'e') {
+        e.preventDefault();
+        setIsCompact((prev) => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen]);
+
   const updateField = <K extends keyof CardSettings>(field: K, value: CardSettings[K]) => {
-    onChange({
-      ...settings,
-      [field]: value,
-    });
+    if (field === 'beamAngle') {
+      onChange({
+        ...settings,
+        beamAngle: value as number,
+        anisotropyRotation: value as number,
+      });
+    } else {
+      onChange({
+        ...settings,
+        [field]: value,
+      });
+    }
   };
 
   const handleCopyJson = async () => {
@@ -130,14 +261,14 @@ export function TuningPanel({
   const displayFormatted = currentQuickDef.format ? currentQuickDef.format(currentValue) : currentValue.toFixed(2);
 
   const targetWidth = !isOpen ? '92px' : isCompact ? '410px' : '520px';
-  const targetHeight = !isOpen ? '42px' : isCompact ? '240px' : 'min(540px, 75vh)';
-  const targetRadius = !isOpen ? '21px' : isCompact ? '18px' : '24px';
+  const targetHeight = !isOpen ? '40px' : isCompact ? '132px' : 'min(490px, 72vh)';
+  const targetRadius = !isOpen ? '20px' : isCompact ? '18px' : '24px';
 
   return (
     <>
-      {/* ── Dynamic Island (Height Collapses First on Exit + Width Tucks In) ── */}
+      {/* ── Dynamic Island ── */}
       <div
-        className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-40 font-sans select-none origin-bottom ${
+        className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-40 select-none origin-bottom ${
           !isOpen
             ? 'shadow-[0_4px_24px_rgba(0,0,0,0.18)]'
             : isCompact
@@ -145,9 +276,9 @@ export function TuningPanel({
             : 'shadow-[0_24px_60px_rgba(0,0,0,0.35)]'
         } ${
           isLight
-            ? 'bg-white/85 border border-black/[0.08] text-slate-800'
-            : 'bg-[#090912]/85 border border-white/[0.09] text-slate-200'
-        } backdrop-blur-2xl overflow-hidden`}
+            ? 'bg-[#f4f3f8] border border-slate-300/80 text-slate-900'
+            : 'bg-[#0e0e17] border border-white/10 text-white'
+        } overflow-hidden font-sans`}
         style={{
           width: targetWidth,
           maxWidth: 'calc(100vw - 32px)',
@@ -158,15 +289,14 @@ export function TuningPanel({
             : 'width 280ms cubic-bezier(0.34, 1.18, 0.45, 1), height 280ms cubic-bezier(0.34, 1.18, 0.45, 1), border-radius 280ms cubic-bezier(0.34, 1.18, 0.45, 1), background-color 200ms ease, box-shadow 280ms ease',
         }}
       >
-        {/* ── PILL BUTTONS ── */}
+        {/* ── PILL BUTTONS (Closed State) ── */}
         <div
-          className={`absolute inset-x-0 top-0 h-[42px] flex items-center justify-between px-2 transition-all ${
+          className={`absolute inset-x-0 top-0 h-[40px] flex items-center justify-between px-2 transition-all ${
             !isOpen
               ? 'opacity-100 scale-100 pointer-events-auto duration-150 delay-150 ease-out'
               : 'opacity-0 scale-85 pointer-events-none duration-70 delay-0 ease-in'
           }`}
         >
-          {/* Tuning Button */}
           <button
             type="button"
             onClick={onToggleOpen}
@@ -179,18 +309,12 @@ export function TuningPanel({
             title="Tuning (T)"
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
-              />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
             </svg>
           </button>
 
-          {/* Divider */}
           <span className={`w-px h-4 mx-0.5 transition-colors duration-300 ${isLight ? 'bg-black/[0.08]' : 'bg-white/[0.08]'}`} />
 
-          {/* Theme Toggle */}
           <button
             type="button"
             onClick={onToggleTheme}
@@ -203,35 +327,11 @@ export function TuningPanel({
             title={`${isLight ? 'Dark' : 'Light'} mode (M)`}
           >
             <div className="relative w-3.5 h-3.5 flex items-center justify-center">
-              <svg
-                className={`w-3.5 h-3.5 text-amber-500 absolute inset-0 transition-all duration-200 ease-out ${
-                  isLight ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 -rotate-45 scale-75 pointer-events-none'
-                }`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
-                />
+              <svg className={`w-3.5 h-3.5 text-amber-500 absolute inset-0 transition-all duration-200 ease-out ${isLight ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 -rotate-45 scale-75 pointer-events-none'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
               </svg>
-              <svg
-                className={`w-3.5 h-3.5 text-slate-300 absolute inset-0 transition-all duration-200 ease-out ${
-                  isLight ? 'opacity-0 rotate-45 scale-75 pointer-events-none' : 'opacity-100 rotate-0 scale-100'
-                }`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
-                />
+              <svg className={`w-3.5 h-3.5 text-slate-300 absolute inset-0 transition-all duration-200 ease-out ${isLight ? 'opacity-0 rotate-45 scale-75 pointer-events-none' : 'opacity-100 rotate-0 scale-100'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
             </div>
           </button>
@@ -239,11 +339,7 @@ export function TuningPanel({
 
         {/* ── EXPANDED INSPECTOR CONTENT ── */}
         <div
-          className={`w-full h-full flex flex-col ${
-            isOpen
-              ? 'opacity-100 pointer-events-auto'
-              : 'opacity-0 pointer-events-none'
-          }`}
+          className={`w-full h-full flex flex-col ${isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
           style={{
             filter: isOpen ? 'brightness(1)' : 'brightness(0)',
             transition: isOpen
@@ -251,278 +347,135 @@ export function TuningPanel({
               : 'filter 80ms cubic-bezier(0.4, 0, 1, 1), opacity 120ms cubic-bezier(0.4, 0, 1, 1) 50ms',
           }}
         >
-          {/* Header */}
-          <div
-            className={`flex items-center justify-between px-3.5 py-2.5 border-b transition-colors duration-250 ${
-              isLight ? 'bg-black/[0.02] border-black/[0.06]' : 'bg-white/[0.02] border-white/[0.06]'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shadow-[0_0_6px_#f59e0b]" />
-              <span
-                className={`font-mono text-[11px] tracking-wide font-semibold ${
-                  isLight ? 'text-slate-700' : 'text-slate-300'
-                }`}
-              >
-                Shader Inspector
-              </span>
-            </div>
-
-            <div className="flex items-center gap-1">
-              {/* Expand / Collapse Button */}
-              <button
-                type="button"
-                onClick={() => setIsCompact((prev) => !prev)}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-mono cursor-pointer transition-all duration-150 active:scale-95 ${
-                  isLight
-                    ? 'bg-black/[0.05] hover:bg-black/[0.09] text-slate-600 hover:text-slate-900'
-                    : 'bg-white/[0.05] hover:bg-white/[0.1] text-slate-300 hover:text-slate-100'
-                }`}
-                title={isCompact ? 'Expand inspector' : 'Collapse to compact'}
-              >
-                {isCompact ? (
-                  <>
-                    <svg className="w-3 h-3 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
-                    </svg>
-                    <span>Expand</span>
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-3 h-3 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+          {isCompact ? (
+            /* COMPACT MODE */
+            <div className="flex flex-col h-full overflow-hidden justify-between p-2.5">
+              <div className="flex items-center justify-between gap-1.5 min-w-0">
+                <div
+                  ref={quickPillsRef}
+                  className="flex items-center gap-1 overflow-x-auto no-scrollbar scroll-smooth py-0.5 min-w-0 flex-1"
+                >
+                  {QUICK_PROPERTIES.map((prop) => {
+                    const isSelected = prop.id === selectedQuickProp;
+                    return (
+                      <button
+                        key={prop.id}
+                        type="button"
+                        onClick={() => setSelectedQuickProp(prop.id)}
+                        className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[11px] font-bold cursor-pointer transition-all active:scale-95 ${
+                          isSelected
+                            ? 'bg-amber-500 text-white shadow-sm'
+                            : isLight
+                            ? 'bg-black/5 text-slate-500 hover:text-slate-900'
+                            : 'bg-white/5 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {prop.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsCompact(false)}
+                    className={`p-1.5 rounded-full cursor-pointer transition-all active:scale-95 ${isLight ? 'bg-black/5 text-slate-500 hover:text-slate-900' : 'bg-white/5 text-slate-400 hover:text-white'}`}
+                    title="Expand (E)"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                     </svg>
-                    <span>Compact</span>
-                  </>
-                )}
-              </button>
-
-              {/* Theme Toggle Button inside Inspector */}
-              <button
-                type="button"
-                onClick={onToggleTheme}
-                className={`w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer transition-all duration-150 active:scale-90 ${
-                  isLight
-                    ? 'text-slate-500 hover:text-slate-800 hover:bg-black/[0.05]'
-                    : 'text-slate-400 hover:text-slate-100 hover:bg-white/[0.06]'
-                }`}
-                title="Toggle Theme (M)"
-                aria-label="Toggle Theme"
-              >
-                {isLight ? (
-                  <svg className="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                  </svg>
-                ) : (
-                  <svg className="w-3.5 h-3.5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                  </svg>
-                )}
-              </button>
-
-              {/* Close Button */}
-              <button
-                type="button"
-                onClick={onToggleOpen}
-                className={`w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer transition-colors duration-150 active:scale-90 ${
-                  isLight
-                    ? 'text-slate-500 hover:text-slate-800 hover:bg-black/[0.05]'
-                    : 'text-slate-400 hover:text-slate-100 hover:bg-white/[0.06]'
-                }`}
-                aria-label="Close Inspector"
-                title="Close (T or Esc)"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          </div>
-
-          {/* COMPACT MODE BODY */}
-          {isCompact ? (
-            <div className="p-3 space-y-2 overflow-hidden">
-              {/* Quick Chips */}
-              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar pb-0.5">
-                {QUICK_PROPERTIES.map((prop) => {
-                  const isSelected = prop.id === selectedQuickProp;
-                  return (
-                    <button
-                      key={prop.id}
-                      type="button"
-                      onClick={() => setSelectedQuickProp(prop.id)}
-                      className={`flex-shrink-0 px-2.5 py-1 rounded-lg text-[10px] font-mono cursor-pointer transition-all duration-150 active:scale-95 ${
-                        isSelected
-                          ? 'bg-amber-500 text-white font-semibold shadow-sm'
-                          : isLight
-                          ? 'bg-black/[0.05] text-slate-600 hover:text-slate-900 hover:bg-black/[0.09]'
-                          : 'bg-white/[0.04] text-slate-400 hover:text-slate-200 hover:bg-white/[0.08]'
-                      }`}
-                    >
-                      {prop.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Slider Row */}
-              <div
-                className={`p-2.5 rounded-xl border space-y-1.5 transition-colors duration-200 ${
-                  isLight ? 'bg-slate-100/80 border-black/[0.06]' : 'bg-black/30 border-white/[0.06]'
-                }`}
-              >
-                <div className="flex justify-between items-center font-mono text-[11px]">
-                  <span className={isLight ? 'text-slate-700 font-medium' : 'text-slate-300 font-medium'}>
-                    {currentQuickDef.label}
-                  </span>
-                  <span className="text-amber-500 font-bold">{displayFormatted}</span>
-                </div>
-
-                <input
-                  type="range"
-                  min={currentQuickDef.min}
-                  max={currentQuickDef.max}
-                  step={currentQuickDef.step}
-                  value={currentValue}
-                  onChange={(e) => updateField(currentQuickDef.id, parseFloat(e.target.value))}
-                  className="w-full h-4 cursor-pointer"
-                />
-              </div>
-
-              {/* Footer Actions */}
-              <div className="flex items-center justify-between gap-1.5 pt-0.5">
-                <div className="flex gap-1 overflow-x-auto no-scrollbar">
-                  <button
-                    type="button"
-                    onClick={() => onChange({ ...PRESETS.singleBeam.settings })}
-                    className={`px-2 py-1 rounded-md text-[10px] font-mono cursor-pointer transition-colors active:scale-95 ${
-                      isLight
-                        ? 'bg-black/[0.05] hover:bg-black/[0.09] text-amber-700 font-medium'
-                        : 'bg-white/[0.04] hover:bg-white/[0.08] text-amber-300/80'
-                    }`}
-                  >
-                    1 Line
                   </button>
                   <button
                     type="button"
-                    onClick={() => onChange({ ...PRESETS.horizontalLaser.settings })}
-                    className={`px-2 py-1 rounded-md text-[10px] font-mono cursor-pointer transition-colors active:scale-95 ${
-                      isLight
-                        ? 'bg-black/[0.05] hover:bg-black/[0.09] text-amber-700 font-medium'
-                        : 'bg-white/[0.04] hover:bg-white/[0.08] text-amber-300/80'
-                    }`}
+                    onClick={onToggleOpen}
+                    className={`p-1.5 rounded-full cursor-pointer transition-all active:scale-95 ${isLight ? 'bg-black/5 text-slate-500 hover:text-slate-900' : 'bg-white/5 text-slate-400 hover:text-white'}`}
+                    title="Close (T or Esc)"
                   >
-                    Horizontal
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onChange({ ...DEFAULT_SETTINGS })}
-                    className={`px-2 py-1 rounded-md text-[10px] font-mono cursor-pointer transition-colors active:scale-95 ${
-                      isLight
-                        ? 'bg-black/[0.05] hover:bg-black/[0.09] text-slate-600'
-                        : 'bg-white/[0.04] hover:bg-white/[0.08] text-slate-400'
-                    }`}
-                  >
-                    Reset
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
                   </button>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={handleCopyJson}
-                  className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-white font-semibold text-[10px] font-mono cursor-pointer shadow-sm active:scale-95 transition-all"
-                >
-                  <span>{copyStatus || 'Copy Values'}</span>
-                </button>
               </div>
+
+              <SliderControl
+                label={currentQuickDef.label}
+                value={currentValue}
+                displayValue={displayFormatted}
+                min={currentQuickDef.min}
+                max={currentQuickDef.max}
+                step={currentQuickDef.step}
+                isLight={isLight}
+                enableWheel={true}
+                onChange={(val) => {
+                  updateField(currentQuickDef.id, val);
+                }}
+              />
             </div>
           ) : (
-            /* EXPANDED MODE BODY */
-            <div className="flex flex-col flex-1 overflow-hidden">
-              {/* Presets Row */}
-              <div
-                className={`px-3.5 py-1.5 border-b flex flex-wrap gap-1 items-center text-[10px] font-mono transition-colors duration-200 ${
-                  isLight ? 'border-black/[0.06] bg-slate-50' : 'border-white/[0.04] bg-black/20'
-                }`}
-              >
-                <span className="uppercase tracking-wider text-[9px] mr-1 text-slate-500 font-medium">
-                  Presets:
-                </span>
-                {Object.entries(PRESETS).map(([key, preset]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => onChange({ ...preset.settings })}
-                    className={`px-2 py-0.5 rounded cursor-pointer transition-colors active:scale-95 ${
-                      isLight
-                        ? 'bg-black/[0.05] hover:bg-black/[0.09] text-amber-800 font-medium'
-                        : 'bg-white/[0.04] hover:bg-white/[0.08] text-amber-300/90'
-                    }`}
-                  >
-                    {preset.name}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => onChange({ ...DEFAULT_SETTINGS })}
-                  className={`px-2 py-0.5 rounded cursor-pointer transition-colors active:scale-95 ${
-                    isLight
-                      ? 'bg-black/[0.05] hover:bg-black/[0.09] text-slate-600'
-                      : 'bg-white/[0.04] hover:bg-white/[0.08] text-slate-400'
-                  }`}
+            /* EXPANDED MODE */
+            <div className="flex flex-col h-full overflow-hidden">
+              <div className="flex items-center justify-between p-2.5 border-b border-white/5">
+                <div
+                  ref={tabsRef}
+                  className={`flex items-center gap-1 p-1 rounded-full overflow-x-auto no-scrollbar scroll-smooth ${isLight ? 'bg-black/5' : 'bg-white/5'}`}
                 >
-                  Reset
-                </button>
-              </div>
-
-              {/* Tabs */}
-              <div
-                className={`flex border-b px-3 pt-1 overflow-x-auto no-scrollbar transition-colors duration-200 ${
-                  isLight ? 'border-black/[0.06] bg-black/[0.01]' : 'border-white/[0.06] bg-white/[0.01]'
-                }`}
-              >
-                {(['beam', 'light', 'material', 'physics'] as const).map((tab) => (
+                  {(['beam', 'light', 'material', 'physics'] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      onClick={() => setActiveTab(tab)}
+                      className={`px-3 py-1 rounded-full text-[11px] font-bold capitalize transition-all active:scale-95 ${
+                        activeTab === tab
+                          ? 'bg-amber-500 text-white shadow-sm'
+                          : isLight
+                          ? 'text-slate-500 hover:text-slate-900'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {tab === 'beam' ? 'Light Line' : tab}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1">
                   <button
-                    key={tab}
                     type="button"
-                    onClick={() => setActiveTab(tab)}
-                    className={`pb-1.5 px-3 text-[11px] font-mono cursor-pointer border-b-2 transition-all capitalize active:scale-95 ${
-                      activeTab === tab
-                        ? isLight
-                          ? 'border-amber-500 text-amber-600 font-bold'
-                          : 'border-amber-400 text-amber-300 font-semibold'
-                        : isLight
-                        ? 'border-transparent text-slate-500 hover:text-slate-800'
-                        : 'border-transparent text-slate-400 hover:text-slate-200'
-                    }`}
+                    onClick={() => setIsCompact(true)}
+                    className={`p-1.5 rounded-full cursor-pointer transition-all active:scale-95 ${isLight ? 'bg-black/5 text-slate-500 hover:text-slate-900' : 'bg-white/5 text-slate-400 hover:text-white'}`}
+                    title="Collapse (E)"
                   >
-                    {tab === 'beam' ? 'Light Line' : tab}
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                    </svg>
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    onClick={onToggleOpen}
+                    className={`p-1.5 rounded-full cursor-pointer transition-all active:scale-95 ${isLight ? 'bg-black/5 text-slate-500 hover:text-slate-900' : 'bg-white/5 text-slate-400 hover:text-white'}`}
+                    title="Close (T or Esc)"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
               </div>
 
-              {/* Sliders Content */}
-              <div className="flex-1 overflow-y-auto p-3.5 space-y-3 text-xs">
+              <div className="flex-1 overflow-y-auto p-3 space-y-2.5 no-scrollbar">
                 {activeTab === 'beam' && (
                   <>
-                    <div className="space-y-1">
-                      <div className={`font-mono text-[11px] ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
-                        Lines Count
-                      </div>
-                      <div className="grid grid-cols-3 gap-1">
+                    <div className={`p-3 rounded-[18px] transition-colors duration-200 ${isLight ? 'bg-black/5' : 'bg-white/5'}`}>
+                      <div className={`text-xs font-bold mb-2 ${isLight ? 'text-slate-800' : 'text-slate-100'}`}>Lines Count</div>
+                      <div className="grid grid-cols-3 gap-2">
                         {[1, 2, 3].map((count) => (
                           <button
                             key={count}
-                            type="button"
                             onClick={() => updateField('beamLines', count)}
-                            className={`py-1 rounded-md text-[10px] font-mono cursor-pointer border transition-all active:scale-95 ${
+                            className={`py-1.5 rounded-full text-xs font-bold transition-all active:scale-95 ${
                               (settings.beamLines ?? 1) === count
-                                ? isLight
-                                  ? 'border-amber-500 bg-amber-500/15 text-amber-800 font-bold'
-                                  : 'border-amber-400 bg-amber-400/20 text-white font-semibold'
-                                : isLight
-                                ? 'border-black/[0.08] bg-black/[0.03] text-slate-600 hover:bg-black/[0.06]'
-                                : 'border-white/[0.06] bg-white/[0.03] text-slate-400 hover:bg-white/[0.06]'
+                                ? 'bg-amber-500 text-white shadow-sm'
+                                : isLight ? 'bg-black/5 text-slate-500 hover:text-slate-900' : 'bg-white/5 text-slate-400 hover:text-white'
                             }`}
                           >
                             {count} {count === 1 ? 'Line' : 'Lines'}
@@ -530,304 +483,210 @@ export function TuningPanel({
                         ))}
                       </div>
                     </div>
-
-                    <div className="space-y-1">
-                      <div className="flex justify-between font-mono text-[11px]">
-                        <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>Beam Intensity</span>
-                        <span className="text-amber-500 font-semibold">{settings.beamIntensity.toFixed(2)}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0"
-                        max="2.5"
-                        step="0.05"
-                        value={settings.beamIntensity}
-                        onChange={(e) => updateField('beamIntensity', parseFloat(e.target.value))}
-                        className="w-full"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex justify-between font-mono text-[11px]">
-                        <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>Beam Angle</span>
-                        <span className="text-amber-500 font-semibold">
-                          {Math.round((settings.beamAngle * 180) / Math.PI)}°
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0"
-                        max="3.1415"
-                        step="0.05"
-                        value={settings.beamAngle}
-                        onChange={(e) => {
-                          const val = parseFloat(e.target.value);
-                          updateField('beamAngle', val);
-                          updateField('anisotropyRotation', val);
-                        }}
-                        className="w-full"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex justify-between font-mono text-[11px]">
-                        <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>Line Streak (Anisotropy)</span>
-                        <span className="text-amber-500 font-semibold">{settings.anisotropy.toFixed(2)}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.05"
-                        value={settings.anisotropy}
-                        onChange={(e) => updateField('anisotropy', parseFloat(e.target.value))}
-                        className="w-full"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex justify-between font-mono text-[11px]">
-                        <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>Beam Softness</span>
-                        <span className="text-amber-500 font-semibold">{settings.beamSoftness.toFixed(1)}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="1"
-                        max="4"
-                        step="0.1"
-                        value={settings.beamSoftness}
-                        onChange={(e) => updateField('beamSoftness', parseFloat(e.target.value))}
-                        className="w-full"
-                      />
-                    </div>
+                    <SliderControl
+                      label="Beam Power"
+                      value={settings.beamIntensity}
+                      min={0}
+                      max={2.5}
+                      step={0.05}
+                      isLight={isLight}
+                      onChange={(val) => updateField('beamIntensity', val)}
+                    />
+                    <SliderControl
+                      label="Beam Angle"
+                      value={settings.beamAngle}
+                      displayValue={`${Math.round((settings.beamAngle * 180) / Math.PI)}°`}
+                      min={0}
+                      max={3.1415}
+                      step={0.05}
+                      isLight={isLight}
+                      onChange={(val) => updateField('beamAngle', val)}
+                    />
+                    <SliderControl
+                      label="Line Streak (Anisotropy)"
+                      value={settings.anisotropy}
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      isLight={isLight}
+                      onChange={(val) => updateField('anisotropy', val)}
+                    />
+                    <SliderControl
+                      label="Beam Softness"
+                      value={settings.beamSoftness}
+                      displayValue={settings.beamSoftness.toFixed(1)}
+                      min={1}
+                      max={4}
+                      step={0.1}
+                      isLight={isLight}
+                      onChange={(val) => updateField('beamSoftness', val)}
+                    />
                   </>
                 )}
-
+                
                 {activeTab === 'light' && (
                   <>
-                    <div className="space-y-1.5">
-                      <div className={`font-mono text-[11px] ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
-                        Gold Hue
-                      </div>
-                      <div className="grid grid-cols-3 gap-1">
+                    <div className={`p-3 rounded-[18px] transition-colors duration-200 ${isLight ? 'bg-black/5' : 'bg-white/5'}`}>
+                      <div className={`text-xs font-bold mb-2 ${isLight ? 'text-slate-800' : 'text-slate-100'}`}>Gold Hue</div>
+                      <div className="grid grid-cols-2 gap-2">
                         {GOLD_COLORS.map((item) => (
                           <button
                             key={item.hex}
-                            type="button"
                             onClick={() => updateField('goldColor', item.hex)}
-                            className={`flex items-center gap-1.5 p-1 rounded-md border text-[10px] font-mono cursor-pointer transition-all active:scale-95 ${
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all active:scale-95 ${
                               settings.goldColor.toLowerCase() === item.hex.toLowerCase()
-                                ? isLight
-                                  ? 'border-amber-500 bg-amber-500/15 text-amber-800 font-bold'
-                                  : 'border-amber-400 bg-amber-400/20 text-white font-semibold'
-                                : isLight
-                                ? 'border-black/[0.08] bg-black/[0.03] text-slate-600 hover:bg-black/[0.06]'
-                                : 'border-white/[0.06] bg-white/[0.03] text-slate-400 hover:bg-white/[0.06]'
+                                ? 'bg-amber-500 text-white shadow-sm'
+                                : isLight ? 'bg-black/5 text-slate-500 hover:text-slate-900' : 'bg-white/5 text-slate-400 hover:text-white'
                             }`}
                           >
-                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.hex }} />
+                            <span className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: item.hex }} />
                             <span className="truncate">{item.name}</span>
                           </button>
                         ))}
                       </div>
                     </div>
-
-                    <div className="space-y-1">
-                      <div className="flex justify-between font-mono text-[11px]">
-                        <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>Key Light</span>
-                        <span className="text-amber-500 font-semibold">{settings.goldLightIntensity.toFixed(2)}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0"
-                        max="3"
-                        step="0.05"
-                        value={settings.goldLightIntensity}
-                        onChange={(e) => updateField('goldLightIntensity', parseFloat(e.target.value))}
-                        className="w-full"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex justify-between font-mono text-[11px]">
-                        <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>Ambient Fill</span>
-                        <span className="text-amber-500 font-semibold">{settings.goldAmbientIntensity.toFixed(2)}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0"
-                        max="2"
-                        step="0.05"
-                        value={settings.goldAmbientIntensity}
-                        onChange={(e) => updateField('goldAmbientIntensity', parseFloat(e.target.value))}
-                        className="w-full"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex justify-between font-mono text-[11px]">
-                        <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>Env Glint</span>
-                        <span className="text-amber-500 font-semibold">{settings.envMapIntensity.toFixed(2)}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0"
-                        max="4"
-                        step="0.1"
-                        value={settings.envMapIntensity}
-                        onChange={(e) => updateField('envMapIntensity', parseFloat(e.target.value))}
-                        className="w-full"
-                      />
-                    </div>
+                    <SliderControl
+                      label="Key Light"
+                      value={settings.goldLightIntensity}
+                      min={0}
+                      max={3}
+                      step={0.05}
+                      isLight={isLight}
+                      onChange={(val) => updateField('goldLightIntensity', val)}
+                    />
+                    <SliderControl
+                      label="Ambient Fill"
+                      value={settings.goldAmbientIntensity}
+                      min={0}
+                      max={2}
+                      step={0.05}
+                      isLight={isLight}
+                      onChange={(val) => updateField('goldAmbientIntensity', val)}
+                    />
+                    <SliderControl
+                      label="Env Glint"
+                      value={settings.envMapIntensity}
+                      min={0}
+                      max={4}
+                      step={0.1}
+                      isLight={isLight}
+                      onChange={(val) => updateField('envMapIntensity', val)}
+                    />
                   </>
                 )}
 
                 {activeTab === 'material' && (
                   <>
-                    <div className="space-y-1">
-                      <div className="flex justify-between font-mono text-[11px]">
-                        <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>Corner Radius</span>
-                        <span className="text-amber-500 font-semibold">{settings.borderRadius.toFixed(2)}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0"
-                        max="0.35"
-                        step="0.01"
-                        value={settings.borderRadius}
-                        onChange={(e) => updateField('borderRadius', parseFloat(e.target.value))}
-                        className="w-full"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex justify-between font-mono text-[11px]">
-                        <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>Metalness</span>
-                        <span className="text-amber-500 font-semibold">{settings.metalness.toFixed(2)}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.01"
-                        value={settings.metalness}
-                        onChange={(e) => updateField('metalness', parseFloat(e.target.value))}
-                        className="w-full"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex justify-between font-mono text-[11px]">
-                        <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>Roughness</span>
-                        <span className="text-amber-500 font-semibold">{settings.roughness.toFixed(2)}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.01"
-                        value={settings.roughness}
-                        onChange={(e) => updateField('roughness', parseFloat(e.target.value))}
-                        className="w-full"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex justify-between font-mono text-[11px]">
-                        <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>Clearcoat</span>
-                        <span className="text-amber-500 font-semibold">{settings.clearcoat.toFixed(2)}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.01"
-                        value={settings.clearcoat}
-                        onChange={(e) => updateField('clearcoat', parseFloat(e.target.value))}
-                        className="w-full"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex justify-between font-mono text-[11px]">
-                        <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>Emboss Normal</span>
-                        <span className="text-amber-500 font-semibold">{settings.normalScale.toFixed(2)}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0"
-                        max="2"
-                        step="0.05"
-                        value={settings.normalScale}
-                        onChange={(e) => updateField('normalScale', parseFloat(e.target.value))}
-                        className="w-full"
-                      />
-                    </div>
+                    <SliderControl
+                      label="Corner Radius"
+                      value={settings.borderRadius}
+                      min={0}
+                      max={0.35}
+                      step={0.01}
+                      isLight={isLight}
+                      onChange={(val) => updateField('borderRadius', val)}
+                    />
+                    <SliderControl
+                      label="Metalness"
+                      value={settings.metalness}
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      isLight={isLight}
+                      onChange={(val) => updateField('metalness', val)}
+                    />
+                    <SliderControl
+                      label="Roughness"
+                      value={settings.roughness}
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      isLight={isLight}
+                      onChange={(val) => updateField('roughness', val)}
+                    />
+                    <SliderControl
+                      label="Clearcoat"
+                      value={settings.clearcoat}
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      isLight={isLight}
+                      onChange={(val) => updateField('clearcoat', val)}
+                    />
+                    <SliderControl
+                      label="Emboss Normal"
+                      value={settings.normalScale}
+                      min={0}
+                      max={2}
+                      step={0.05}
+                      isLight={isLight}
+                      onChange={(val) => updateField('normalScale', val)}
+                    />
                   </>
                 )}
 
                 {activeTab === 'physics' && (
                   <>
-                    <div className="space-y-1">
-                      <div className="flex justify-between font-mono text-[11px]">
-                        <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>Tilt Angle</span>
-                        <span className="text-amber-500 font-semibold">{settings.maxTiltAngle.toFixed(2)}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.1"
-                        max="1.2"
-                        step="0.02"
-                        value={settings.maxTiltAngle}
-                        onChange={(e) => updateField('maxTiltAngle', parseFloat(e.target.value))}
-                        className="w-full"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex justify-between font-mono text-[11px]">
-                        <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>Spring Damping</span>
-                        <span className="text-amber-500 font-semibold">{settings.damping.toFixed(1)}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="2"
-                        max="20"
-                        step="0.5"
-                        value={settings.damping}
-                        onChange={(e) => updateField('damping', parseFloat(e.target.value))}
-                        className="w-full"
-                      />
-                    </div>
+                    <SliderControl
+                      label="Tilt Angle"
+                      value={settings.maxTiltAngle}
+                      min={0.1}
+                      max={1.2}
+                      step={0.02}
+                      isLight={isLight}
+                      onChange={(val) => updateField('maxTiltAngle', val)}
+                    />
+                    <SliderControl
+                      label="Spring Damping"
+                      value={settings.damping}
+                      displayValue={settings.damping.toFixed(1)}
+                      min={2}
+                      max={20}
+                      step={0.5}
+                      isLight={isLight}
+                      onChange={(val) => updateField('damping', val)}
+                    />
                   </>
                 )}
               </div>
 
               {/* Footer */}
-              <div
-                className={`p-3 border-t flex items-center gap-2 transition-colors duration-200 ${
-                  isLight ? 'border-black/[0.06] bg-slate-50' : 'border-white/[0.06] bg-black/30'
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={handleCopyJson}
-                  className="flex-1 py-2 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-white font-semibold text-xs font-mono cursor-pointer shadow-sm text-center active:scale-95 transition-all"
+              <div className={`p-2.5 border-t flex flex-col gap-2 transition-colors duration-200 ${isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'}`}>
+                <div
+                  ref={presetsPillsRef}
+                  className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth py-0.5"
                 >
-                  {copyStatus || 'Copy Values JSON'}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowJsonModal(true)}
-                  className={`px-3 py-2 rounded-lg text-xs font-mono cursor-pointer transition-colors active:scale-95 ${
-                    isLight
-                      ? 'bg-black/[0.05] hover:bg-black/[0.1] text-slate-700'
-                      : 'bg-white/[0.06] hover:bg-white/[0.10] text-slate-300'
-                  }`}
-                >
-                  JSON
-                </button>
+                  <span className={`text-[11px] font-bold pl-1 pr-1 flex-shrink-0 ${isLight ? 'text-slate-400' : 'text-slate-500'}`}>Presets</span>
+                  {Object.entries(PRESETS).map(([key, preset]) => (
+                    <button
+                      key={key}
+                      onClick={() => onChange({ ...preset.settings })}
+                      className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[11px] font-bold transition-all active:scale-95 ${isLight ? 'bg-black/5 text-slate-600 hover:bg-black/10' : 'bg-white/5 text-slate-300 hover:bg-white/10'}`}
+                    >
+                      {preset.name}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => onChange({ ...DEFAULT_SETTINGS })}
+                    className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[11px] font-bold transition-all active:scale-95 ${isLight ? 'bg-black/5 text-slate-600 hover:bg-black/10' : 'bg-white/5 text-slate-300 hover:bg-white/10'}`}
+                  >
+                    Reset
+                  </button>
+                </div>
+                <div className="flex gap-2 pt-0.5">
+                  <button
+                    onClick={handleCopyJson}
+                    className="flex-1 py-1.5 rounded-full bg-amber-500 hover:bg-amber-400 text-white font-bold text-xs shadow-sm active:scale-95 transition-all"
+                  >
+                    {copyStatus || 'Copy Values'}
+                  </button>
+                  <button
+                    onClick={() => setShowJsonModal(true)}
+                    className={`px-4 py-1.5 rounded-full font-bold text-xs active:scale-95 transition-all ${isLight ? 'bg-black/5 text-slate-600 hover:bg-black/10' : 'bg-white/5 text-slate-300 hover:bg-white/10'}`}
+                  >
+                    JSON
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -836,69 +695,39 @@ export function TuningPanel({
 
       {/* ── JSON Export Modal ── */}
       {showJsonModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
-          <div
-            className={`w-full max-w-sm border rounded-2xl p-4 shadow-2xl flex flex-col gap-3 font-mono ${
-              isLight ? 'bg-white border-black/[0.12] text-slate-800' : 'bg-[#0c0c16] border-white/[0.12] text-slate-200'
-            }`}
-          >
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-amber-500 font-semibold">Export Configuration</span>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md transition-opacity">
+          <div className={`w-full max-w-sm rounded-[32px] p-6 shadow-2xl flex flex-col gap-4 ${isLight ? 'bg-[#f4f3f8] text-slate-900 border border-slate-300/80' : 'bg-[#0e0e17] text-white border border-white/10'}`}>
+            <div className="flex items-center justify-between">
+              <span className="text-lg font-bold">Export Configuration</span>
               <button
-                type="button"
                 onClick={() => setShowJsonModal(false)}
-                className={`p-1 rounded cursor-pointer transition-colors active:scale-90 ${
-                  isLight ? 'text-slate-400 hover:text-slate-800' : 'text-slate-400 hover:text-white'
-                }`}
+                className={`p-2 rounded-full cursor-pointer transition-colors active:scale-90 ${isLight ? 'bg-black/5 text-slate-500 hover:bg-black/10' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}
               >
-                ✕
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
-
             <textarea
               ref={textAreaRef}
               readOnly
               rows={8}
               value={JSON.stringify(settings, null, 2)}
               onClick={(e) => (e.target as HTMLTextAreaElement).select()}
-              className={`w-full p-2.5 rounded-xl border text-[11px] font-mono selection:bg-amber-400 selection:text-black focus:outline-none ${
-                isLight
-                  ? 'bg-slate-50 border-black/[0.1] text-slate-800'
-                  : 'bg-black/50 border-white/[0.08] text-amber-300'
-              }`}
+              className={`w-full p-4 rounded-[20px] text-xs font-mono selection:bg-amber-400 selection:text-black focus:outline-none ${isLight ? 'bg-black/5 text-slate-800' : 'bg-white/5 text-amber-300'}`}
             />
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (textAreaRef.current) {
-                    textAreaRef.current.select();
-                    document.execCommand('copy');
-                    setCopyStatus('Copied! ✓');
-                    if (typeof navigator !== 'undefined' && navigator.vibrate) {
-                      navigator.vibrate(15);
-                    }
-                    setTimeout(() => setCopyStatus(''), 2000);
-                  }
-                }}
-                className="flex-1 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-white font-semibold text-xs cursor-pointer text-center active:scale-95 transition-all"
-              >
-                {copyStatus || 'Select All & Copy'}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowJsonModal(false)}
-                className={`px-3 py-2 rounded-lg text-xs cursor-pointer transition-colors active:scale-95 ${
-                  isLight
-                    ? 'bg-black/[0.06] text-slate-700 hover:bg-black/[0.1]'
-                    : 'bg-white/[0.08] text-slate-300 hover:bg-white/[0.12]'
-                }`}
-              >
-                Done
-              </button>
-            </div>
+            <button
+              onClick={() => {
+                if (textAreaRef.current) {
+                  textAreaRef.current.select();
+                  document.execCommand('copy');
+                  setCopyStatus('Copied! ✓');
+                  if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(15);
+                  setTimeout(() => setCopyStatus(''), 2000);
+                }
+              }}
+              className="w-full py-3 rounded-full bg-amber-500 hover:bg-amber-400 text-white font-bold text-sm cursor-pointer shadow-sm active:scale-95 transition-all"
+            >
+              {copyStatus || 'Select All & Copy'}
+            </button>
           </div>
         </div>
       )}
